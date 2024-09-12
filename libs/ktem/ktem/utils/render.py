@@ -140,6 +140,8 @@ class Render:
     ) -> str:
         """Format the retrieval score and the document"""
         # score from doc_store (Elasticsearch)
+        if "score" not in doc:
+            doc.score = 0.5
         if is_close(doc.score, -1.0):
             vectorstore_score = ""
             text_search_str = " (full-text search)<br>"

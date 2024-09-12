@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 
 from kotaemon.agents import (
     BaseTool,
-    GoogleSearchTool,
+    JinaSearchTool,
     LLMTool,
     ReactAgent,
     WikipediaTool,
@@ -27,6 +27,9 @@ DEFAULT_AGENT_STEPS = 4
 
 class DocSearchArgs(BaseModel):
     query: str = Field(..., description="a search query as input to the doc search")
+
+
+
 
 
 class DocSearchTool(BaseTool):
@@ -117,8 +120,8 @@ class DocSearchTool(BaseTool):
 
 
 TOOL_REGISTRY = {
-    "Google": GoogleSearchTool(),
-    "Wikipedia": WikipediaTool(),
+    "Google": JinaSearchTool(),
+    # "Wikipedia": WikipediaTool(),
     "LLM": LLMTool(),
     "SearchDoc": DocSearchTool(),
 }
@@ -186,6 +189,7 @@ class ReactAgentPipeline(BaseReasoning):
     agent: ReactAgent = ReactAgent.withx()
     rewrite_pipeline: RewriteQuestionPipeline = RewriteQuestionPipeline.withx()
     use_rewrite: bool = False
+    use_web_search: bool = False
 
     def prepare_citation(self, step_id, step, output, status) -> Document:
         header = "<b>Step {id}</b>: {log}".format(id=step_id, log=step.log)
@@ -258,7 +262,7 @@ class ReactAgentPipeline(BaseReasoning):
 
     @classmethod
     def get_pipeline(
-        cls, settings: dict, states: dict, retrievers: list | None = None
+        cls, settings: dict, states: dict, retrievers: list | None = None, use_web_search: bool = False
     ) -> BaseReasoning:
         _id = cls.get_info()["id"]
         prefix = f"reasoning.options.{_id}"
@@ -268,7 +272,7 @@ class ReactAgentPipeline(BaseReasoning):
 
         max_context_length_setting = settings.get("reasoning.max_context_length", None)
 
-        pipeline = ReactAgentPipeline(retrievers=retrievers)
+        pipeline = ReactAgentPipeline(retrievers=retrievers, use_web_search=use_web_search) 
         pipeline.agent.llm = llm
         pipeline.agent.max_iterations = settings[f"{prefix}.max_iterations"]
 
@@ -319,7 +323,7 @@ class ReactAgentPipeline(BaseReasoning):
             },
             "tools": {
                 "name": "Tools for knowledge retrieval",
-                "value": ["SearchDoc", "LLM"],
+                "value": ["Google", "SearchDoc", "LLM"],
                 "component": "checkboxgroup",
                 "choices": tool_choices,
             },

@@ -5,8 +5,10 @@ from collections import defaultdict
 from difflib import SequenceMatcher
 from functools import partial
 from typing import Generator
+import urllib.parse
 
 import numpy as np
+import requests
 import tiktoken
 from ktem.llms.manager import llms
 from ktem.reasoning.prompt_optimization import (
@@ -15,6 +17,7 @@ from ktem.reasoning.prompt_optimization import (
 )
 from ktem.utils.render import Render
 from theflow.settings import settings as flowsettings
+from decouple import config
 
 from kotaemon.base import (
     AIMessage,
@@ -229,7 +232,7 @@ class AnswerWithContextPipeline(BaseComponent):
 
     llm: ChatLLM = Node(default_callback=lambda _: llms.get_default())
     vlm_endpoint: str = getattr(flowsettings, "KH_VLM_ENDPOINT", "")
-    use_multimodal: bool = getattr(flowsettings, "KH_REASONINGS_USE_MULTIMODAL", True)
+    use_multimodal: bool = False
     citation_pipeline: CitationPipeline = Node(
         default_callback=lambda _: CitationPipeline(llm=llms.get_default())
     )
@@ -246,6 +249,7 @@ class AnswerWithContextPipeline(BaseComponent):
 
     def get_prompt(self, question, evidence, evidence_mode: int):
         """Prepare the prompt and other information for LLM"""
+        self.use_multimodal = True
         if evidence_mode == EVIDENCE_MODE_TEXT:
             prompt_template = PromptTemplate(self.qa_template)
         elif evidence_mode == EVIDENCE_MODE_TABLE:
@@ -354,6 +358,8 @@ class AnswerWithContextPipeline(BaseComponent):
             messages.append(AIMessage(content=ai))
 
         if self.use_multimodal and evidence_mode == EVIDENCE_MODE_FIGURE:
+
+
             # create image message:
             messages.append(
                 HumanMessage(
@@ -444,6 +450,74 @@ class AddQueryContextPipeline(BaseComponent):
         return Document(content=resp)
 
 
+def web_search(
+        message: str
+    ) -> tuple[list[RetrievedDocument], list[Document]]:
+        
+        def create_search_url(message):
+            base_url = 'https://s.jina.ai/'
+            encoded_message = urllib.parse.quote(message)
+            search_url = f"{base_url}{encoded_message}"
+            print(search_url)
+            return search_url
+        
+        docs = []
+        doc_ids = []
+
+        # Define the URL and headers
+        url = create_search_url(message)
+        api_key = config("JINA_API_KEY", default="")
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "X-With-Links-Summary": "true",
+                "Accept": "application/json"
+        }
+
+        # Make the GET request
+        response = requests.get(url, headers=headers)
+
+        # Check the response
+        if response.status_code == 200:
+            result = response.json()
+        else:
+            print(f"Web Search Error: {response.status_code} - {response.text}")
+        
+        docs, doc_ids = [], []
+        plot_docs = []
+
+        for idx, webpage in enumerate(result['data']):
+
+            doc = RetrievedDocument(
+                source=f"webpage-{idx}",
+                content=webpage['content'],
+                metadata={
+                    "type": "info",
+                },
+                channel="info",
+                score=0.5,
+            )
+
+            docs.append(doc)
+            doc_ids.append(f"webpage-{idx}")
+
+
+        info = [
+            Document(
+                channel="info",
+                content=Render.collapsible_with_header(doc, open_collapsible=True),
+            )
+            for doc in docs
+        ]
+
+        print("###########")
+        print("Web Search")
+        print("###########")
+        print(f"Found {len(docs)} webpages.")
+        print(docs)
+        return docs, info
+
+
+
 class FullQAPipeline(BaseReasoning):
     """Question answering pipeline. Handle from question to answer"""
 
@@ -474,6 +548,8 @@ class FullQAPipeline(BaseReasoning):
         # else:
         #     query = message
         # print(f"Rewritten query: {query}")
+
+        
         query = None
         if not query:
             # TODO: previously return [], [] because we think this message as something
@@ -516,6 +592,7 @@ class FullQAPipeline(BaseReasoning):
             )
             for doc in plot_docs
         ]
+
 
         return docs, info
 
@@ -797,7 +874,7 @@ class FullQAPipeline(BaseReasoning):
     @classmethod
     def get_info(cls) -> dict:
         return {
-            "id": "simple",
+            "id": "Simple QA",
             "name": "Simple QA",
             "description": (
                 "Simple RAG-based question answering pipeline. This pipeline can "
