@@ -40,6 +40,7 @@ class JinaSearchTool(BaseTool):
                     "Accept": "application/json"
             }
 
+
             response = requests.get(url, headers=headers)
 
             if response.status_code == 200:

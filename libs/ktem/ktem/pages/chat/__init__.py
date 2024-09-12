@@ -134,7 +134,7 @@ class ChatPage(BasePage):
                             )
                             self.model_types = gr.Dropdown(
                                 choices=self._app.default_settings.reasoning.options[
-                                    "simple"
+                                    "Simple QA"
                                 ]
                                 .settings["llm"]
                                 .choices,
